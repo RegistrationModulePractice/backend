@@ -80,7 +80,7 @@ export function createApp() {
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
 
-  app.get('/api/docs/openapi.json', (_request, response) => {
+  app.get('/openapi.json', (_request, response) => {
     response.json(openApiDocument);
   });
 
@@ -173,11 +173,18 @@ export function createApp() {
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-if (isDirectRun) {
-  const port = Number(process.env.PORT) || DEFAULT_PORT;
-  const app = createApp();
+const port = Number(process.env.PORT) || DEFAULT_PORT;
+const app = createApp();
 
-  app.listen(port, () => {
-    console.log(`BTS meeting API started on port ${port}`);
-  });
-}
+app.listen(port, () => {
+  console.log(`BTS meeting API started on port ${port}`);
+});
+
+// if (isDirectRun) {
+//   const port = Number(process.env.PORT) || DEFAULT_PORT;
+//   const app = createApp();
+
+//   app.listen(port, () => {
+//     console.log(`BTS meeting API started on port ${port}`);
+//   });
+// }
