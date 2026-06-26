@@ -1,11 +1,11 @@
 import express from 'express';
-import { pathToFileURL } from 'node:url';
 import swaggerUi from 'swagger-ui-express';
 import { companies, conferenceDates, timeOptions } from './data/catalog.js';
 import { openApiDocument } from './openapi.js';
 
 const DEFAULT_PORT = 3000;
 const meetingRequests = [];
+const tildaHookEvents = [];
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -18,6 +18,8 @@ function normalizePayload(payload) {
     companyId: Number.isFinite(companyId) ? companyId : NaN,
     companyName: normalizeString(payload?.companyName),
     initiatorName: normalizeString(payload?.initiatorName),
+    initiatorPosition: normalizeString(payload?.initiatorPosition),
+    initiatorCity: normalizeString(payload?.initiatorCity),
     phone: normalizeString(payload?.phone),
     email: normalizeString(payload?.email).toLowerCase(),
     date: normalizeString(payload?.date),
@@ -75,6 +77,7 @@ function validateMeetingRequest(payload) {
 }
 
 const app = express();
+const port = Number(process.env.PORT) || DEFAULT_PORT;
 
 app.disable('x-powered-by');
 app.use((request, response, next) => {
@@ -90,6 +93,7 @@ app.use((request, response, next) => {
   next();
 });
 app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 app.get('/api/docs/openapi.json', (_request, response) => {
   response.json(openApiDocument);
@@ -142,6 +146,8 @@ app.post('/api/meeting-requests', (request, response) => {
     companyName: company.name,
     companyEmail: company.email,
     initiatorName: payload.initiatorName,
+    initiatorPosition: payload.initiatorPosition,
+    initiatorCity: payload.initiatorCity,
     phone: payload.phone,
     email: payload.email,
     date: payload.date,
@@ -154,9 +160,25 @@ app.post('/api/meeting-requests', (request, response) => {
   meetingRequests.unshift(meetingRequest);
 
   response.status(201).json({
-    message: 'Заявка принята. CRM и email-процессы подключим следующим этапом.',
+    message: 'Заявка принята. Backend сохранил запись, а CRM-сценарий запускается через Tilda bridge.',
     requestId: meetingRequest.id,
     submittedAt: meetingRequest.submittedAt,
+  });
+});
+
+app.post('/api/tilda/hooks/meeting-request', (request, response) => {
+  const hookEvent = {
+    id: tildaHookEvents.length + 1,
+    receivedAt: new Date().toISOString(),
+    payload: request.body,
+  };
+
+  tildaHookEvents.unshift(hookEvent);
+
+  response.status(202).json({
+    message: 'Tilda hook accepted.',
+    hookEventId: hookEvent.id,
+    receivedAt: hookEvent.receivedAt,
   });
 });
 
@@ -179,6 +201,6 @@ app.use((error, _request, response, _next) => {
   });
 });
 
-app.listen(3000, () => {
-  console.log(`BTS meeting API started on port 3000`);
+app.listen(port, () => {
+  console.log(`BTS meeting API started on port ${port}`);
 });
