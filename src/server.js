@@ -166,7 +166,7 @@ app.post('/api/meeting-requests', (request, response) => {
   });
 });
 
-app.post('/api/tilda/hooks/meeting-request', (request, response) => {
+app.post('/api/tilda/hooks/meeting-request-check', (request, response) => {
   const hookEvent = {
     id: tildaHookEvents.length + 1,
     receivedAt: new Date().toISOString(),
