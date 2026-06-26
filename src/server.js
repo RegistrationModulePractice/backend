@@ -74,107 +74,102 @@ function validateMeetingRequest(payload) {
   return { company, errors };
 }
 
-export function createApp() {
-  const app = express();
+const app = express();
 
-  app.disable('x-powered-by');
-  app.use(express.json({ limit: '1mb' }));
+app.disable('x-powered-by');
+app.use(express.json({ limit: '1mb' }));
 
-  app.get('/openapi.json', (_request, response) => {
-    response.json(openApiDocument);
+app.get('/openapi.json', (_request, response) => {
+  response.json(openApiDocument);
+});
+
+app.use(
+  '/api/docs',
+  swaggerUi.serve,
+  swaggerUi.setup(openApiDocument, {
+    customSiteTitle: 'BTS Meeting API Docs',
+    swaggerOptions: {
+      url: '/api/docs/openapi.json',
+    },
+  }),
+);
+
+app.get('/api/health', (_request, response) => {
+  response.json({
+    status: 'ok',
+    service: 'bts-meeting-api',
+    timestamp: new Date().toISOString(),
   });
+});
 
-  app.use(
-    '/api/docs',
-    swaggerUi.serve,
-    swaggerUi.setup(openApiDocument, {
-      customSiteTitle: 'BTS Meeting API Docs',
-      swaggerOptions: {
-        url: '/api/docs/openapi.json',
-      },
-    }),
-  );
+app.get('/api/catalog', (_request, response) => {
+  response.json({
+    conferenceDates,
+    timeOptions,
+    companies,
+  });
+});
 
-  app.get('/api/health', (_request, response) => {
-    response.json({
-      status: 'ok',
-      service: 'bts-meeting-api',
-      timestamp: new Date().toISOString(),
+app.post('/api/meeting-requests', (request, response) => {
+  const payload = normalizePayload(request.body);
+  const { company, errors } = validateMeetingRequest(payload);
+
+  if (Object.keys(errors).length > 0) {
+    response.status(400).json({
+      message: 'Проверьте корректность полей формы.',
+      errors,
     });
-  });
+    return;
+  }
 
-  app.get('/api/catalog', (_request, response) => {
-    response.json({
-      conferenceDates,
-      timeOptions,
-      companies,
+  const meetingRequest = {
+    id: meetingRequests.length + 1,
+    status: 'new',
+    submittedAt: new Date().toISOString(),
+    companyId: company.id,
+    companyName: company.name,
+    companyEmail: company.email,
+    initiatorName: payload.initiatorName,
+    phone: payload.phone,
+    email: payload.email,
+    date: payload.date,
+    time: payload.time,
+    topic: payload.topic,
+    request: payload.request,
+    consent: payload.consent,
+  };
+
+  meetingRequests.unshift(meetingRequest);
+
+  response.status(201).json({
+    message: 'Заявка принята. CRM и email-процессы подключим следующим этапом.',
+    requestId: meetingRequest.id,
+    submittedAt: meetingRequest.submittedAt,
+  });
+});
+
+app.use((error, _request, response, next) => {
+  if (error instanceof SyntaxError && 'body' in error) {
+    response.status(400).json({
+      message: 'Не удалось прочитать JSON в теле запроса.',
     });
+    return;
+  }
+
+  next(error);
+});
+
+app.use((error, _request, response, _next) => {
+  console.error(error);
+
+  response.status(500).json({
+    message: 'Внутренняя ошибка сервера.',
   });
-
-  app.post('/api/meeting-requests', (request, response) => {
-    const payload = normalizePayload(request.body);
-    const { company, errors } = validateMeetingRequest(payload);
-
-    if (Object.keys(errors).length > 0) {
-      response.status(400).json({
-        message: 'Проверьте корректность полей формы.',
-        errors,
-      });
-      return;
-    }
-
-    const meetingRequest = {
-      id: meetingRequests.length + 1,
-      status: 'new',
-      submittedAt: new Date().toISOString(),
-      companyId: company.id,
-      companyName: company.name,
-      companyEmail: company.email,
-      initiatorName: payload.initiatorName,
-      phone: payload.phone,
-      email: payload.email,
-      date: payload.date,
-      time: payload.time,
-      topic: payload.topic,
-      request: payload.request,
-      consent: payload.consent,
-    };
-
-    meetingRequests.unshift(meetingRequest);
-
-    response.status(201).json({
-      message: 'Заявка принята. CRM и email-процессы подключим следующим этапом.',
-      requestId: meetingRequest.id,
-      submittedAt: meetingRequest.submittedAt,
-    });
-  });
-
-  app.use((error, _request, response, next) => {
-    if (error instanceof SyntaxError && 'body' in error) {
-      response.status(400).json({
-        message: 'Не удалось прочитать JSON в теле запроса.',
-      });
-      return;
-    }
-
-    next(error);
-  });
-
-  app.use((error, _request, response, _next) => {
-    console.error(error);
-
-    response.status(500).json({
-      message: 'Внутренняя ошибка сервера.',
-    });
-  });
-
-  return app;
-}
+});
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 const port = Number(process.env.PORT) || DEFAULT_PORT;
-const app = createApp();
 
 app.listen(port, () => {
   console.log(`BTS meeting API started on port ${port}`);
