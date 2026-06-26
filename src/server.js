@@ -77,9 +77,21 @@ function validateMeetingRequest(payload) {
 const app = express();
 
 app.disable('x-powered-by');
+app.use((request, response, next) => {
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (request.method === 'OPTIONS') {
+    response.status(204).end();
+    return;
+  }
+
+  next();
+});
 app.use(express.json({ limit: '1mb' }));
 
-app.get('/openapi.json', (_request, response) => {
+app.get('/api/docs/openapi.json', (_request, response) => {
   response.json(openApiDocument);
 });
 
@@ -167,19 +179,6 @@ app.use((error, _request, response, _next) => {
   });
 });
 
-const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-
-const port = Number(process.env.PORT) || DEFAULT_PORT;
-
-app.listen(port, () => {
-  console.log(`BTS meeting API started on port ${port}`);
+app.listen(3000, () => {
+  console.log(`BTS meeting API started on port 3000`);
 });
-
-// if (isDirectRun) {
-//   const port = Number(process.env.PORT) || DEFAULT_PORT;
-//   const app = createApp();
-
-//   app.listen(port, () => {
-//     console.log(`BTS meeting API started on port ${port}`);
-//   });
-// }
