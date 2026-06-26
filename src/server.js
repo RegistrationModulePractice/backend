@@ -175,7 +175,7 @@ app.post('/api/tilda/hooks/meeting-request-check', (request, response) => {
 
   tildaHookEvents.unshift(hookEvent);
 
-  response.status(202).json({
+  response.status(200).json({
     message: 'Tilda hook accepted.',
     hookEventId: hookEvent.id,
     receivedAt: hookEvent.receivedAt,
