@@ -4,6 +4,10 @@ import { companies, conferenceDates, timeOptions } from './data/catalog.js';
 import { openApiDocument } from './openapi.js';
 
 const DEFAULT_PORT = 3000;
+const DEFAULT_CATALOG_PAGE = 1;
+const DEFAULT_CATALOG_PAGE_SIZE = 12;
+const MAX_CATALOG_PAGE_SIZE = 12;
+
 const meetingRequests = [];
 const tildaHookEvents = [];
 
@@ -11,11 +15,71 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function parsePositiveInteger(value, fallbackValue) {
+  const parsedValue = Number.parseInt(String(value ?? ''), 10);
+
+  if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+    return fallbackValue;
+  }
+
+  return parsedValue;
+}
+
+function buildCatalogFilters(query) {
+  return {
+    search: normalizeString(query?.search),
+    industry: normalizeString(query?.industry),
+    serviceType: normalizeString(query?.serviceType),
+    region: normalizeString(query?.region),
+    city: normalizeString(query?.city),
+  };
+}
+
+function buildCompanyHaystack(company) {
+  return [
+    company.name,
+    company.inn,
+    company.description,
+    company.industry,
+    company.serviceType,
+    company.region,
+    company.city,
+    ...company.keywords,
+  ]
+    .join(' ')
+    .toLowerCase();
+}
+
+function matchesCatalogFilters(company, filters) {
+  const normalizedSearch = filters.search.toLowerCase();
+
+  return (
+    (!normalizedSearch || buildCompanyHaystack(company).includes(normalizedSearch)) &&
+    (!filters.industry || company.industry === filters.industry) &&
+    (!filters.serviceType || company.serviceType === filters.serviceType) &&
+    (!filters.region || company.region === filters.region) &&
+    (!filters.city || company.city === filters.city)
+  );
+}
+
+function getUniqueValues(items, key) {
+  return [...new Set(items.map((item) => item[key]).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+}
+
+function buildCatalogFilterOptions() {
+  return {
+    industries: getUniqueValues(companies, 'industry'),
+    serviceTypes: getUniqueValues(companies, 'serviceType'),
+    regions: getUniqueValues(companies, 'region'),
+    cities: getUniqueValues(companies, 'city'),
+  };
+}
+
 function normalizePayload(payload) {
   const companyId = Number(payload?.companyId);
 
   return {
-    companyId: Number.isFinite(companyId) ? companyId : NaN,
+    companyId: Number.isFinite(companyId) ? companyId : Number.NaN,
     companyName: normalizeString(payload?.companyName),
     initiatorName: normalizeString(payload?.initiatorName),
     initiatorPosition: normalizeString(payload?.initiatorPosition),
@@ -92,6 +156,7 @@ app.use((request, response, next) => {
 
   next();
 });
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -118,11 +183,41 @@ app.get('/api/health', (_request, response) => {
   });
 });
 
-app.get('/api/catalog', (_request, response) => {
+app.get('/api/catalog', (request, response) => {
+  const filters = buildCatalogFilters(request.query);
+  const requestedPage = parsePositiveInteger(request.query.page, DEFAULT_CATALOG_PAGE);
+  const requestedPageSize = parsePositiveInteger(request.query.pageSize, DEFAULT_CATALOG_PAGE_SIZE);
+  const pageSize = Math.min(requestedPageSize, MAX_CATALOG_PAGE_SIZE);
+
+  const filteredCompanies = companies.filter((company) => matchesCatalogFilters(company, filters));
+  const totalItems = filteredCompanies.length;
+  const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / pageSize);
+  const page = totalPages === 0 ? DEFAULT_CATALOG_PAGE : Math.min(requestedPage, totalPages);
+  const startIndex = (page - 1) * pageSize;
+  const paginatedCompanies = filteredCompanies.slice(startIndex, startIndex + pageSize);
+
   response.json({
     conferenceDates,
     timeOptions,
-    companies,
+    filterOptions: buildCatalogFilterOptions(),
+    companies: paginatedCompanies,
+    meta: {
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+      itemsOnPage: paginatedCompanies.length,
+      totalCompanies: companies.length,
+      hasPreviousPage: page > 1,
+      hasNextPage: totalPages > 0 && page < totalPages,
+      query: {
+        search: filters.search,
+        industry: filters.industry,
+        serviceType: filters.serviceType,
+        region: filters.region,
+        city: filters.city,
+      },
+    },
   });
 });
 

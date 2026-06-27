@@ -12,7 +12,7 @@ const companySchema = {
     city: { type: 'string', example: 'Москва' },
     description: {
       type: 'string',
-      example: 'Производит линейки колбас, деликатесов и ready-to-cook решений.',
+      example: 'Производит линейки колбас, деликатесов и ready-to-cook решений для розницы.',
     },
     keywords: {
       type: 'array',
@@ -28,6 +28,69 @@ const conferenceDateSchema = {
   properties: {
     value: { type: 'string', format: 'date', example: '2026-09-24' },
     label: { type: 'string', example: '24 сентября 2026' },
+  },
+};
+
+const filterOptionsSchema = {
+  type: 'object',
+  required: ['industries', 'serviceTypes', 'regions', 'cities'],
+  properties: {
+    industries: {
+      type: 'array',
+      items: { type: 'string' },
+      example: ['Мясопереработка', 'Логистика'],
+    },
+    serviceTypes: {
+      type: 'array',
+      items: { type: 'string' },
+      example: ['Производитель', 'IT-решения'],
+    },
+    regions: {
+      type: 'array',
+      items: { type: 'string' },
+      example: ['Москва и область', 'Санкт-Петербург'],
+    },
+    cities: {
+      type: 'array',
+      items: { type: 'string' },
+      example: ['Москва', 'Санкт-Петербург'],
+    },
+  },
+};
+
+const catalogMetaSchema = {
+  type: 'object',
+  required: [
+    'page',
+    'pageSize',
+    'totalItems',
+    'totalPages',
+    'itemsOnPage',
+    'totalCompanies',
+    'hasPreviousPage',
+    'hasNextPage',
+    'query',
+  ],
+  properties: {
+    page: { type: 'integer', example: 1 },
+    pageSize: { type: 'integer', example: 12 },
+    totalItems: { type: 'integer', example: 30 },
+    totalPages: { type: 'integer', example: 3 },
+    itemsOnPage: { type: 'integer', example: 12 },
+    totalCompanies: { type: 'integer', example: 30 },
+    hasPreviousPage: { type: 'boolean', example: false },
+    hasNextPage: { type: 'boolean', example: true },
+    query: {
+      type: 'object',
+      required: ['search', 'industry', 'serviceType', 'region', 'city'],
+      properties: {
+        search: { type: 'string', example: 'логистика' },
+        industry: { type: 'string', example: 'Логистика' },
+        serviceType: { type: 'string', example: '' },
+        region: { type: 'string', example: '' },
+        city: { type: 'string', example: '' },
+      },
+    },
   },
 };
 
@@ -57,14 +120,16 @@ const tildaHookPayloadSchema = {
     targetCompanyId: 'company_001',
     targetCompanyName: 'ООО Компания',
     targetCompanyInn: '1234567890',
+    targetCompanyServiceType: 'Интегратор',
+    targetCompanyRegion: 'Москва',
     initiatorName: 'Иван Иванов',
-    initiatorPosition: 'Директор',
+    initiatorPosition: 'Руководитель',
     initiatorEmail: 'ivan@example.com',
     initiatorPhone: '+7 999 999-99-99',
     initiatorCity: 'Москва',
-    meetingDateTime: '2026-06-26 14:00',
+    meetingDateTime: '2026-06-27 14:00',
     meetingTopic: 'Обсуждение сотрудничества',
-    meetingRequest: 'Хотим обсудить партнерство',
+    meetingRequest: 'Хотим обсудить возможное партнерство',
     personalDataAgreement: true,
   },
 };
@@ -73,9 +138,9 @@ export const openApiDocument = {
   openapi: '3.0.3',
   info: {
     title: 'BTS Meeting API',
-    version: '1.1.0',
+    version: '1.2.0',
     description:
-      'Backend для каталога участников конференции, приема заявок и stub-hook от Tilda. CRM-сценарий инициируется на фронтенде через postMessage в родительскую Tilda-страницу.',
+      'Backend for the conference companies catalog, meeting requests, server-side filtering, and paginated catalog responses.',
   },
   servers: [
     {
@@ -84,19 +149,19 @@ export const openApiDocument = {
     },
   ],
   tags: [
-    { name: 'System', description: 'Служебные эндпоинты backend-сервиса' },
-    { name: 'Catalog', description: 'Каталог компаний и метаданные конференции' },
-    { name: 'Meeting requests', description: 'Отправка заявок на встречу из frontend-приложения' },
-    { name: 'Tilda', description: 'Stub-эндпоинты для интеграции с Tilda' },
+    { name: 'System', description: 'Service endpoints' },
+    { name: 'Catalog', description: 'Companies catalog and conference metadata' },
+    { name: 'Meeting requests', description: 'Meeting request submission from the frontend app' },
+    { name: 'Tilda', description: 'Stub endpoints for Tilda integration' },
   ],
   paths: {
     '/api/health': {
       get: {
         tags: ['System'],
-        summary: 'Проверка доступности backend',
+        summary: 'Health check',
         responses: {
           200: {
-            description: 'Сервис доступен',
+            description: 'Service is available',
             content: {
               'application/json': {
                 schema: {
@@ -117,15 +182,59 @@ export const openApiDocument = {
     '/api/catalog': {
       get: {
         tags: ['Catalog'],
-        summary: 'Получить каталог компаний и слоты конференции',
+        summary: 'Get the companies catalog with server-side filtering and pagination',
+        parameters: [
+          {
+            in: 'query',
+            name: 'page',
+            schema: { type: 'integer', minimum: 1, default: 1 },
+            description: 'Catalog page number',
+          },
+          {
+            in: 'query',
+            name: 'pageSize',
+            schema: { type: 'integer', minimum: 1, maximum: 12, default: 12 },
+            description: 'Page size, capped at 12',
+          },
+          {
+            in: 'query',
+            name: 'search',
+            schema: { type: 'string' },
+            description: 'Free-text search by name, INN, description, and keywords',
+          },
+          {
+            in: 'query',
+            name: 'industry',
+            schema: { type: 'string' },
+            description: 'Industry filter',
+          },
+          {
+            in: 'query',
+            name: 'serviceType',
+            schema: { type: 'string' },
+            description: 'Service type filter',
+          },
+          {
+            in: 'query',
+            name: 'region',
+            schema: { type: 'string' },
+            description: 'Region filter',
+          },
+          {
+            in: 'query',
+            name: 'city',
+            schema: { type: 'string' },
+            description: 'City filter',
+          },
+        ],
         responses: {
           200: {
-            description: 'Каталог успешно загружен',
+            description: 'Catalog loaded successfully',
             content: {
               'application/json': {
                 schema: {
                   type: 'object',
-                  required: ['conferenceDates', 'timeOptions', 'companies'],
+                  required: ['conferenceDates', 'timeOptions', 'filterOptions', 'companies', 'meta'],
                   properties: {
                     conferenceDates: { type: 'array', items: conferenceDateSchema },
                     timeOptions: {
@@ -133,7 +242,9 @@ export const openApiDocument = {
                       items: { type: 'string' },
                       example: ['10:00', '11:00', '12:00'],
                     },
+                    filterOptions: filterOptionsSchema,
                     companies: { type: 'array', items: companySchema },
+                    meta: catalogMetaSchema,
                   },
                 },
               },
@@ -145,7 +256,7 @@ export const openApiDocument = {
     '/api/meeting-requests': {
       post: {
         tags: ['Meeting requests'],
-        summary: 'Сохранить заявку на встречу на backend',
+        summary: 'Store a meeting request on the backend',
         requestBody: {
           required: true,
           content: {
@@ -156,7 +267,7 @@ export const openApiDocument = {
         },
         responses: {
           201: {
-            description: 'Заявка принята',
+            description: 'Meeting request accepted',
             content: {
               'application/json': {
                 schema: {
@@ -175,7 +286,7 @@ export const openApiDocument = {
             },
           },
           400: {
-            description: 'Ошибка валидации или некорректный JSON',
+            description: 'Validation error or invalid JSON',
             content: {
               'application/json': {
                 schema: {
@@ -196,7 +307,7 @@ export const openApiDocument = {
             },
           },
           500: {
-            description: 'Внутренняя ошибка сервера',
+            description: 'Server error',
             content: {
               'application/json': {
                 schema: {
@@ -212,10 +323,10 @@ export const openApiDocument = {
         },
       },
     },
-    '/api/tilda/hooks/meeting-request': {
+    '/api/tilda/hooks/meeting-request-check': {
       post: {
         tags: ['Tilda'],
-        summary: 'Stub-hook для входящего события от Tilda',
+        summary: 'Stub hook for an incoming Tilda event',
         requestBody: {
           required: false,
           content: {
@@ -228,8 +339,8 @@ export const openApiDocument = {
           },
         },
         responses: {
-          202: {
-            description: 'Hook принят',
+          200: {
+            description: 'Hook accepted',
             content: {
               'application/json': {
                 schema: {
